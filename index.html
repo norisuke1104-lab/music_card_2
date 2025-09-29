@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音楽鑑賞カード選択ツール</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Firebase SDK を追加 -->
+    <script type="module">
+        // これらのインポートは変更しないでください
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
+
+        // ===== Firebase 設定（ユーザー提供のものを反映済み）=====
+        const firebaseConfig = {
+            apiKey: "AIzaSyCRHtsT5k0vTLs2Fcstu3UEoRN-SI11q5A",
+            authDomain: "music-card-3e566.firebaseapp.com",
+            projectId: "music-card-3e566",
+            storageBucket: "music-card-3e566.appspot.com",
+            messagingSenderId: "517460347633",
+            appId: "1:517460347633:web:c022e0acaf2395e0387750",
+            measurementId: "G-P5K172KNX3"
+        };
+
+        // --- これより下のコードは、通常は変更不要です ---
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            window.firebaseDB = db;
+            window.firebaseTools = { collection, addDoc, onSnapshot, query, orderBy };
+            console.log("Firebase initialized successfully!");
+        } catch (error) {
+            console.error("Firebaseの初期化に失敗しました。firebaseConfigが正しく設定されているか確認してください。", error);
+            alert("Firebaseの初期化に失敗しました。設定を確認してください。");
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        body { font-family: 'Inter', 'Noto Sans JP', sans-serif; }
+        .card { transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        #selection-area { position: relative; overflow: hidden; }
+        #selection-area .card { position: absolute; cursor: grab; }
+        #selection-area .card:active { cursor: grabbing; z-index: 10; }
+        .teacher-submission-card { transition: all 0.3s; }
+        .teacher-submission-card:hover { transform: scale(1.03); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 p-4 md:p-8">
+
+    <!-- ===== ログインモーダル ===== -->
+    <div id="login-modal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-2xl text-center w-11/12 max-w-md">
+            <h2 class="text-2xl font-bold mb-4">ようこそ！</h2>
+            <p class="text-gray-600 mb-6">あなたの名前を入力してください。</p>
+            <input type="text" id="username-input" class="w-full border-2 border-gray-300 rounded-md p-3 text-lg text-center focus:border-blue-500 focus:ring-blue-500 transition" placeholder="なまえ">
+            <button id="login-button" class="w-full mt-6 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">はじめる</button>
+        </div>
+    </div>
+    
+    <!-- ===== 生徒用メイン画面 ===== -->
+    <div id="student-container" class="max-w-7xl mx-auto">
+        <header class="text-center mb-4">
+            <div id="user-info" class="text-left text-sm mb-4"></div>
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-700">音楽鑑賞カード選択ツール</h1>
+            <p class="text-gray-500 mt-2">音楽を聴いて感じたことや、聴き取ったことに合うカードを選んでみよう。</p>
+        </header>
+        <section class="mb-10 pt-6 border-t-2 border-gray-300">
+            <div class="flex justify-between items-center mb-4 flex-wrap gap-4">
+                <h2 class="text-2xl font-bold text-gray-700">選んだカード（自由に動かして配置できます）</h2>
+                <div class="flex gap-2 flex-wrap justify-end">
+                     <button id="submit-layout-button" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        <span>この配置を提出する</span>
+                    </button>
+                    <button id="clear-button" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">すべて消す</button>
+                </div>
+            </div>
+            <div id="selection-area" class="min-h-[250px] bg-white rounded-xl shadow-inner border-2 border-dashed border-gray-300 p-4 flex flex-wrap gap-2 items-start transition-colors">
+                <p id="selection-placeholder" class="text-gray-400 self-center w-full text-center absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y/2">下のカードをクリック（またはドラッグ＆ドロップ）して、ここに追加します。</p>
+            </div>
+        </section>
+        <main id="card-banks" class="space-y-8">
+            <div id="loading-state" class="text-center py-10"><p class="text-lg text-gray-600">スプレッドシートからデータを読み込んでいます...</p><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mt-4"></div></div>
+        </main>
+    </div>
+
+    <!-- ===== 先生用ダッシュボード画面 ===== -->
+    <div id="teacher-container" class="max-w-7xl mx-auto hidden">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-700">先生用ダッシュボード</h1>
+            <p class="text-gray-500 mt-2">生徒から提出されたカード配置がリアルタイムで表示されます。</p>
+        </header>
+        <div id="submissions-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <p id="submissions-placeholder" class="text-gray-500 col-span-full text-center py-10">まだ提出された作品はありません。</p>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- DOM要素 ---
+        const loginModal = document.getElementById('login-modal');
+        const usernameInput = document.getElementById('username-input');
+        const loginButton = document.getElementById('login-button');
+        const studentContainer = document.getElementById('student-container');
+        const teacherContainer = document.getElementById('teacher-container');
+        const userInfo = document.getElementById('user-info');
+        const submitLayoutButton = document.getElementById('submit-layout-button');
+        const cardBanks = document.getElementById('card-banks');
+        const selectionArea = document.getElementById('selection-area');
+        const selectionPlaceholder = document.getElementById('selection-placeholder');
+        const clearButton = document.getElementById('clear-button');
+        const loadingState = document.getElementById('loading-state');
+        const submissionsGrid = document.getElementById('submissions-grid');
+        const submissionsPlaceholder = document.getElementById('submissions-placeholder');
+        
+        // --- 定数 ---
+        const SPREADSHEET_URL_ORIGINAL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRyg4pnXnznW3zuxlmaDTE-BIjpk-JL8KsgvFwcLY2-en7dfyJHh1ybSJ0-Ze34J-V-Lme_oO08E2o0/pub?output=csv';
+        // ローカルファイルでテストする際のCORSエラーを回避するため、さらに別のプロキシを経由します。
+        const GOOGLE_SHEET_URL = `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(SPREADSHEET_URL_ORIGINAL)}`;
+        const categoryColors = { '音色': '#3b82f6', 'リズム': '#22c55e', '速度': '#eab308', '旋律': '#ef4444', 'テクスチュア': '#a855f7', '強弱': '#f97316', '形式': '#ec4899', '構成': '#14b8a6' };
+        const defaultColor = '#6b7280';
+        
+        let currentUser = null;
+
+        // --- 初期化 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('mode') === 'teacher') {
+                showTeacherView();
+            } else {
+                handleLogin();
+            }
+        });
+        
+        function handleLogin() {
+            currentUser = sessionStorage.getItem('musicCardToolUser');
+            if (currentUser) {
+                startStudentApp();
+            } else {
+                loginModal.classList.remove('hidden');
+            }
+        }
+
+        loginButton.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            if (username) {
+                currentUser = username;
+                sessionStorage.setItem('musicCardToolUser', currentUser);
+                startStudentApp();
+            } else {
+                alert('名前を入力してください。');
+            }
+        });
+        usernameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') loginButton.click(); });
+
+        function startStudentApp() {
+            loginModal.classList.add('hidden');
+            studentContainer.classList.remove('hidden');
+            userInfo.innerHTML = `<span>こんにちは、<strong class="font-bold">${currentUser}</strong> さん</span>`;
+            fetchCardData();
+        }
+
+        // --- 先生モード ---
+        function showTeacherView() {
+            loginModal.classList.add('hidden');
+            studentContainer.classList.add('hidden');
+            teacherContainer.classList.remove('hidden');
+            loadSubmissions();
+        }
+
+        function loadSubmissions() {
+            if (!window.firebaseDB) return;
+            const { collection, query, orderBy, onSnapshot } = window.firebaseTools;
+            const submissionsRef = collection(window.firebaseDB, "submissions");
+            const q = query(submissionsRef, orderBy("timestamp", "desc"));
+            
+            onSnapshot(q, (querySnapshot) => {
+                submissionsPlaceholder.classList.toggle('hidden', !querySnapshot.empty);
+                submissionsGrid.innerHTML = '';
+                querySnapshot.forEach((doc) => {
+                    const submission = doc.data();
+                    const cardEl = document.createElement('div');
+                    cardEl.className = 'teacher-submission-card bg-white p-4 rounded-lg shadow-md cursor-pointer';
+                    
+                    const cardLayoutHtml = submission.layout.map(card => {
+                        const color = categoryColors[card.Category] || defaultColor;
+                        return `<div class="text-xs font-semibold p-1 rounded" style="background-color: ${color}20; border-left: 3px solid ${color};">${card.Text}</div>`;
+                    }).join('');
+
+                    cardEl.innerHTML = `
+                        <h3 class="font-bold text-lg">${submission.user} さん</h3>
+                        <p class="text-xs text-gray-500 mb-2">${new Date(submission.timestamp?.toDate()).toLocaleString()}</p>
+                        <div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>
+                    `;
+                    submissionsGrid.appendChild(cardEl);
+                });
+            });
+        }
+        
+        // --- 生徒モード ---
+        async function fetchCardData() {
+            try {
+                const response = await fetch(GOOGLE_SHEET_URL);
+                if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
+                const csvText = await response.text();
+                const cardData = parseCSV(csvText);
+                renderCards(cardData);
+                loadingState.classList.add('hidden');
+            } catch (error) { 
+                console.error('Error fetching card data:', error);
+                loadingState.innerHTML = `<p class="text-red-500">カードデータの読み込みに失敗しました。時間をおいて再度お試しください。</p>`;
+            }
+        }
+
+        function parseCSV(text) {
+             const lines = text.trim().split(/\r\n|\n/);
+             return lines.slice(1).map(line => {
+                const parts = line.split(',');
+                const CardType = parts[0] || '';
+                const Category = parts[1] || '';
+                const Text = parts.slice(2).join(',').replace(/"/g, '');
+                return { CardType, Category, Text };
+             }).filter(card => card.Text); // Textが空の行は除外
+        }
+        
+        function renderCards(data) {
+            const cardsByType = data.reduce((acc, card) => {
+                const type = card.CardType || 'その他';
+                if (!acc[type]) acc[type] = [];
+                acc[type].push(card);
+                return acc;
+            }, {});
+
+            cardBanks.innerHTML = ''; // Reset before rendering
+
+            Object.entries(cardsByType).forEach(([type, cards]) => {
+                const section = document.createElement('section');
+                section.className = 'bg-white p-4 md:p-6 rounded-xl shadow-md';
+                section.innerHTML = `<h3 class="text-xl font-bold mb-2">${type}カード</h3>`;
+                const container = document.createElement('div');
+                container.className = 'flex flex-wrap gap-2';
+                cards.forEach(card => container.appendChild(createCard(card)));
+                section.appendChild(container);
+                cardBanks.appendChild(section);
+            });
+        }
+        
+        function createCard(cardData) {
+            const card = document.createElement('div');
+            card.className = 'card flex-shrink-0 w-16 h-20 bg-white rounded-md shadow-md flex flex-col justify-between text-center font-semibold text-gray-700 select-none overflow-hidden text-xs';
+            card.innerHTML = `<div class="p-1 flex-grow flex items-center justify-center">${cardData.Text}</div>`;
+            if (cardData.Category) {
+                const color = categoryColors[cardData.Category] || defaultColor;
+                const footer = document.createElement('div');
+                footer.className = 'px-1 py-0.5 text-[9px] text-white font-bold';
+                footer.style.backgroundColor = color;
+                footer.textContent = cardData.Category;
+                card.appendChild(footer);
+            }
+            card.draggable = true;
+            Object.assign(card.dataset, cardData);
+            return card;
+        }
+
+        clearButton.addEventListener('click', () => { selectionArea.innerHTML = ''; updatePlaceholder(); });
+        
+        submitLayoutButton.addEventListener('click', async () => {
+            if (!window.firebaseDB) {
+                alert("データベースに接続できません。設定を確認してください。");
+                return;
+            }
+            const cards = selectionArea.querySelectorAll('.card');
+            if (cards.length === 0) {
+                alert('提出するカードがありません。');
+                return;
+            }
+            if (!confirm('この配置を提出しますか？')) return;
+
+            const layoutData = Array.from(cards).map(card => ({
+                Text: card.dataset.text,
+                CardType: card.dataset.type,
+                Category: card.dataset.category,
+                left: card.style.left,
+                top: card.style.top
+            }));
+            
+            try {
+                const { collection, addDoc } = window.firebaseTools;
+                await addDoc(collection(window.firebaseDB, "submissions"), {
+                    user: currentUser,
+                    layout: layoutData,
+                    timestamp: new Date()
+                });
+                alert('提出しました！');
+                selectionArea.innerHTML = '';
+                updatePlaceholder();
+            } catch (error) {
+                console.error("提出中にエラーが発生しました: ", error);
+                alert("提出に失敗しました。");
+            }
+        });
+
+        // --- ドラッグ＆ドロップ、カード移動 ---
+        let draggedCard = null;
+        document.addEventListener('dragstart', e => { if (e.target.closest('.card')) { draggedCard = e.target.closest('.card'); } });
+        selectionArea.addEventListener('dragover', e => e.preventDefault());
+        selectionArea.addEventListener('drop', e => { e.preventDefault(); if (draggedCard) addCardToSelection(draggedCard, e); });
+        cardBanks.addEventListener('click', e => { if (e.target.closest('.card')) addCardToSelection(e.target.closest('.card')); });
+        
+        function addCardToSelection(originalCard, dropEvent) {
+            const newCard = originalCard.cloneNode(true);
+            selectionArea.appendChild(newCard);
+            updatePlaceholder();
+            if (dropEvent) {
+                const rect = selectionArea.getBoundingClientRect();
+                newCard.style.left = `${dropEvent.clientX - rect.left - (newCard.offsetWidth / 2)}px`;
+                newCard.style.top = `${dropEvent.clientY - rect.top - (newCard.offsetHeight / 2)}px`;
+            } else {
+                const gap = 10;
+                const existingCards = selectionArea.querySelectorAll('.card').length - 1;
+                newCard.style.left = `${(existingCards * (newCard.offsetWidth + gap)) + gap}px`;
+                newCard.style.top = `${gap}px`;
+            }
+        }
+        function updatePlaceholder() { selectionPlaceholder.classList.toggle('hidden', !!selectionArea.querySelector('.card'));}
+        let activeCard = null, offsetX, offsetY;
+        selectionArea.addEventListener('mousedown', e => {
+            activeCard = e.target.closest('.card'); if (!activeCard) return;
+            if (e.detail === 2) { activeCard.remove(); updatePlaceholder(); return; }
+            offsetX = e.clientX - activeCard.getBoundingClientRect().left; offsetY = e.clientY - activeCard.getBoundingClientRect().top;
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+        function onMouseMove(e) {
+            if (!activeCard) return;
+            const rect = selectionArea.getBoundingClientRect();
+            activeCard.style.left = `${e.clientX - rect.left - offsetX}px`;
+            activeCard.style.top = `${e.clientY - rect.top - offsetY}px`;
+        }
+        function onMouseUp() { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); activeCard = null; }
+    </script>
+</body>
+</html>
+
