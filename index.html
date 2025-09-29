@@ -92,7 +92,7 @@
             <h1 class="text-3xl md:text-4xl font-bold text-gray-700">先生用ダッシュボード</h1>
             <p class="text-gray-500 mt-2">生徒から提出されたカード配置がリアルタイムで表示されます。</p>
         </header>
-        <div id="submissions-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div id="submissions-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             <p id="submissions-placeholder" class="text-gray-500 col-span-full text-center py-10">まだ提出された作品はありません。</p>
         </div>
     </div>
@@ -189,12 +189,12 @@
                     cardEl.className = 'teacher-submission-card bg-white p-2 rounded-lg shadow-md';
                     
                     const cardLayoutHtml = Array.isArray(submission.layout) ? submission.layout.map(card => {
-                        const color = categoryColors[card.Category] || defaultColor;
-                        const text = card.Text || 'テキストなし';
+                        const color = categoryColors[card.category] || defaultColor; // 修正: 小文字の 'category'
+                        const text = card.text || 'テキストなし'; // 修正: 小文字の 'text'
                         return `<div class="text-[10px] font-semibold py-0.5 px-1 rounded whitespace-nowrap overflow-hidden text-ellipsis" style="background-color: ${color}20; border-left: 2px solid ${color};" title="${text}">${text}</div>`;
                     }).join('') : '<p class="text-xs text-red-500">レイアウトデータが不整合です。</p>';
 
-                    cardEl.innerHTML = `<h3 class="font-bold text-sm">${submission.user} さん</h3><p class="text-xs text-gray-500 mb-2">${submission.timestamp ? new Date(submission.timestamp.toDate()).toLocaleString() : '日付不明'}</p><div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>`;
+                    cardEl.innerHTML = `<h3 class="font-bold text-sm truncate">${submission.user} さん</h3><p class="text-[10px] text-gray-500 mb-2">${submission.timestamp ? new Date(submission.timestamp.toDate()).toLocaleString() : '日付不明'}</p><div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>`;
                     submissionsGrid.appendChild(cardEl);
                 });
             });
@@ -313,7 +313,10 @@
                 card.appendChild(footer);
             }
             card.draggable = true;
-            Object.assign(card.dataset, cardData);
+            // 修正: データセットのキーを小文字に統一
+            card.dataset.text = cardData.Text;
+            card.dataset.cardType = cardData.CardType;
+            card.dataset.category = cardData.Category || '';
             if(isCustom) card.dataset.isCustom = 'true';
             return card;
         }
@@ -399,9 +402,9 @@
             if (cards.length === 0) { alert('提出するカードがありません。'); return; }
             if (!confirm('この配置を提出しますか？')) return;
             const layoutData = Array.from(cards).map(card => ({
-                Text: card.dataset.text || '', 
-                CardType: card.dataset.type || '', 
-                Category: card.dataset.category || '',
+                text: card.dataset.text || '', 
+                cardType: card.dataset.cardType || '', 
+                category: card.dataset.category || '',
                 left: card.style.left, 
                 top: card.style.top
             }));
@@ -438,7 +441,7 @@
                 }
             } else if (target.classList.contains('delete-custom-card')) {
                 const cardElement = target.closest('.card');
-                const cardData = { Text: cardElement.dataset.text, CardType: cardElement.dataset.type, Category: cardElement.dataset.category };
+                const cardData = { Text: cardElement.dataset.text, CardType: cardElement.dataset.cardType, Category: cardElement.dataset.category };
                 deleteCustomCard(cardData);
                 cardElement.remove();
             } else if (e.target.closest('.card:not(.delete-custom-card)')) {
