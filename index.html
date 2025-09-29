@@ -355,6 +355,7 @@
 
         // --- イベントリスナー ---
         document.addEventListener('DOMContentLoaded', handleLogin);
+        
         loginButton.addEventListener('click', () => {
             const username = usernameInput.value.trim();
             if (username) {
@@ -365,6 +366,7 @@
                 alert('名前を入力してください。');
             }
         });
+
         clearButton.addEventListener('click', () => { 
             selectionArea.innerHTML = ''; 
             updatePlaceholder(); 
@@ -380,6 +382,7 @@
                 left: card.style.left, top: card.style.top
             }));
             try {
+                // 修正: 'of' を '=' に変更
                 const { collection, addDoc } = window.firebaseTools;
                 await addDoc(collection(window.firebaseDB, "submissions"), {
                     user: currentUser, layout: layoutData, timestamp: new Date()
@@ -417,9 +420,22 @@
                  addCardToSelection(e.target.closest('.card'));
             }
         });
-        cardBanks.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('custom-card-input')) { e.target.nextElementSibling.click(); } });
 
-        document.addEventListener('dragstart', e => { if (e.target.closest('.card')) { draggedCard = e.target.closest('.card'); } });
+        cardBanks.addEventListener('keydown', e => { 
+            if (e.key === 'Enter' && e.target.classList.contains('custom-card-input')) { 
+                e.target.nextElementSibling.click(); 
+            } 
+        });
+
+        // 修正: ドラッグ元をcardBanksに限定
+        document.addEventListener('dragstart', e => { 
+            if (e.target.closest('#card-banks .card')) { 
+                draggedCard = e.target.closest('.card'); 
+            } 
+        });
+        document.addEventListener('dragend', () => {
+            draggedCard = null;
+        });
         selectionArea.addEventListener('dragover', e => e.preventDefault());
         selectionArea.addEventListener('drop', e => { e.preventDefault(); if (draggedCard) addCardToSelection(draggedCard, e); });
         
