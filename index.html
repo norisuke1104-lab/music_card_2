@@ -205,23 +205,41 @@
                 if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
                 const csvText = await response.text();
                 const cardData = parseCSV(csvText);
+                if (cardData.length === 0) {
+                    throw new Error('スプレッドシートからカードデータを解析できませんでした。内容を確認してください。');
+                }
                 renderCards(cardData);
                 loadingState.classList.add('hidden');
             } catch (error) { 
                 console.error('Error fetching card data:', error);
-                loadingState.innerHTML = `<p class="text-red-500">カードデータの読み込みに失敗しました。URLが正しいか確認してください。</p>`;
+                loadingState.innerHTML = `<p class="text-red-500">カードデータの読み込みに失敗しました。URLやスプレッドシートの内容を確認してください。</p>`;
             }
         }
 
         function parseCSV(text) {
              const lines = text.trim().split(/\r\n|\n/);
+             // ヘッダー行を取得
+             const headers = lines[0].split(',').map(h => h.trim());
+             const cardTypeIndex = headers.indexOf('CardType');
+             const categoryIndex = headers.indexOf('Category');
+             const textIndex = headers.indexOf('Text');
+
+             if (cardTypeIndex === -1 || categoryIndex === -1 || textIndex === -1) {
+                console.error('CSVヘッダーに "CardType", "Category", "Text" のいずれかがありません。');
+                return [];
+             }
+
              return lines.slice(1).map(line => {
-                const parts = line.split(',');
-                const CardType = parts[0] || '';
-                const Category = parts[1] || '';
-                const Text = parts.slice(2).join(',').replace(/"/g, '');
+                // 正規表現でカンマ区切りを正しく扱う (引用符内のカンマを無視)
+                const parts = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+                if (parts.length < headers.length) return null;
+
+                const CardType = (parts[cardTypeIndex] || '').replace(/"/g, '').trim();
+                const Category = (parts[categoryIndex] || '').replace(/"/g, '').trim();
+                const Text = (parts[textIndex] || '').replace(/"/g, '').trim();
+                
                 return { CardType, Category, Text };
-             }).filter(card => card.Text);
+             }).filter(card => card && card.Text);
         }
         
         function renderCards(data) {
