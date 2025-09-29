@@ -10,7 +10,7 @@
     <script type="module">
         // これらのインポートは変更しないでください
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
 
         // ===== Firebase 設定（ユーザー提供のものを反映済み）=====
         const firebaseConfig = {
@@ -28,7 +28,7 @@
             const app = initializeApp(firebaseConfig);
             const db = getFirestore(app);
             window.firebaseDB = db;
-            window.firebaseTools = { collection, addDoc, onSnapshot, query, orderBy };
+            window.firebaseTools = { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp };
             console.log("Firebase initialized successfully!");
         } catch (error) {
             console.error("Firebaseの初期化に失敗しました。firebaseConfigが正しく設定されているか確認してください。", error);
@@ -378,14 +378,18 @@
             if (cards.length === 0) { alert('提出するカードがありません。'); return; }
             if (!confirm('この配置を提出しますか？')) return;
             const layoutData = Array.from(cards).map(card => ({
-                Text: card.dataset.text, CardType: card.dataset.type, Category: card.dataset.category,
-                left: card.style.left, top: card.style.top
+                Text: card.dataset.text || '', 
+                CardType: card.dataset.type || '', 
+                Category: card.dataset.category || '',
+                left: card.style.left, 
+                top: card.style.top
             }));
             try {
-                // 修正: 'of' を '=' に変更
-                const { collection, addDoc } = window.firebaseTools;
+                const { collection, addDoc, serverTimestamp } = window.firebaseTools;
                 await addDoc(collection(window.firebaseDB, "submissions"), {
-                    user: currentUser, layout: layoutData, timestamp: new Date()
+                    user: currentUser, 
+                    layout: layoutData, 
+                    timestamp: serverTimestamp()
                 });
                 alert('提出しました！');
                 selectionArea.innerHTML = '';
@@ -427,9 +431,9 @@
             } 
         });
 
-        // 修正: ドラッグ元をcardBanksに限定
-        document.addEventListener('dragstart', e => { 
-            if (e.target.closest('#card-banks .card')) { 
+        // 修正: ドラッグ開始のイベントリスナーをcardBanksに限定
+        cardBanks.addEventListener('dragstart', e => { 
+            if (e.target.closest('.card')) { 
                 draggedCard = e.target.closest('.card'); 
             } 
         });
@@ -443,10 +447,14 @@
             if (e.target.tagName === 'BUTTON') return;
             activeCard = e.target.closest('.card'); 
             if (!activeCard) return;
+
+            // 修正: ブラウザのデフォルトのドラッグ動作を抑制
+            e.preventDefault();
+
             offsetX = e.clientX - activeCard.getBoundingClientRect().left; 
             offsetY = e.clientY - activeCard.getBoundingClientRect().top;
             document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+            document.addEventListener('mouseup', onMouseUp, { once: true }); // 修正: mouseupイベントが一度だけ実行されるように
         });
     </script>
 </body>
