@@ -53,7 +53,7 @@
     <div id="login-modal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
         <div class="bg-white p-8 rounded-lg shadow-2xl text-center w-11/12 max-w-md">
             <h2 class="text-2xl font-bold mb-4">ようこそ！</h2>
-            <p class="text-gray-600 mb-6">あなたの名前を入力してください。</p>
+            <p class="text-gray-600 mb-6">あなたの名前を入力してください。<br>追加したカードがこのブラウザに保存されます。</p>
             <input type="text" id="username-input" class="w-full border-2 border-gray-300 rounded-md p-3 text-lg text-center focus:border-blue-500 focus:ring-blue-500 transition" placeholder="なまえ">
             <button id="login-button" class="w-full mt-6 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">はじめる</button>
         </div>
@@ -120,37 +120,19 @@
         const defaultColor = '#6b7280';
         
         let currentUser = null;
+        let draggedCard = null;
+        let activeCard = null, offsetX, offsetY;
 
-        // --- 初期化 ---
-        document.addEventListener('DOMContentLoaded', () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('mode') === 'teacher') {
-                showTeacherView();
-            } else {
-                handleLogin();
-            }
-        });
-        
+        // --- 関数定義 ---
+
         function handleLogin() {
-            currentUser = sessionStorage.getItem('musicCardToolUser');
+            currentUser = localStorage.getItem('musicCardToolUser');
             if (currentUser) {
                 startStudentApp();
             } else {
                 loginModal.classList.remove('hidden');
             }
         }
-
-        loginButton.addEventListener('click', () => {
-            const username = usernameInput.value.trim();
-            if (username) {
-                currentUser = username;
-                sessionStorage.setItem('musicCardToolUser', currentUser);
-                startStudentApp();
-            } else {
-                alert('名前を入力してください。');
-            }
-        });
-        usernameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') loginButton.click(); });
 
         function startStudentApp() {
             loginModal.classList.add('hidden');
@@ -159,7 +141,22 @@
             fetchCardData();
         }
 
-        // --- 先生モード ---
+        function getCustomCardsStorageKey() { return `customCards_${currentUser}`; }
+        function loadCustomCards() { return JSON.parse(localStorage.getItem(getCustomCardsStorageKey())) || []; }
+        function saveCustomCards(cards) { localStorage.setItem(getCustomCardsStorageKey(), JSON.stringify(cards)); }
+        
+        function addCustomCard(cardData) {
+            const customCards = loadCustomCards();
+            customCards.push(cardData);
+            saveCustomCards(customCards);
+        }
+
+        function deleteCustomCard(cardData) {
+            let customCards = loadCustomCards();
+            customCards = customCards.filter(card => !(card.Text === cardData.Text && card.CardType === cardData.CardType && card.Category === cardData.Category));
+            saveCustomCards(customCards);
+        }
+
         function showTeacherView() {
             loginModal.classList.add('hidden');
             studentContainer.classList.add('hidden');
@@ -172,7 +169,6 @@
             const { collection, query, orderBy, onSnapshot } = window.firebaseTools;
             const submissionsRef = collection(window.firebaseDB, "submissions");
             const q = query(submissionsRef, orderBy("timestamp", "desc"));
-            
             onSnapshot(q, (querySnapshot) => {
                 submissionsPlaceholder.classList.toggle('hidden', !querySnapshot.empty);
                 submissionsGrid.innerHTML = '';
@@ -180,23 +176,16 @@
                     const submission = doc.data();
                     const cardEl = document.createElement('div');
                     cardEl.className = 'teacher-submission-card bg-white p-4 rounded-lg shadow-md cursor-pointer';
-                    
                     const cardLayoutHtml = submission.layout.map(card => {
                         const color = categoryColors[card.Category] || defaultColor;
                         return `<div class="text-xs font-semibold p-1 rounded" style="background-color: ${color}20; border-left: 3px solid ${color};">${card.Text}</div>`;
                     }).join('');
-
-                    cardEl.innerHTML = `
-                        <h3 class="font-bold text-lg">${submission.user} さん</h3>
-                        <p class="text-xs text-gray-500 mb-2">${new Date(submission.timestamp?.toDate()).toLocaleString()}</p>
-                        <div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>
-                    `;
+                    cardEl.innerHTML = `<h3 class="font-bold text-lg">${submission.user} さん</h3><p class="text-xs text-gray-500 mb-2">${new Date(submission.timestamp?.toDate()).toLocaleString()}</p><div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>`;
                     submissionsGrid.appendChild(cardEl);
                 });
             });
         }
         
-        // --- 生徒モード ---
         async function fetchCardData() {
             try {
                 const response = await fetch(GOOGLE_SHEET_URL);
@@ -220,26 +209,21 @@
              const cardTypeIndex = headers.indexOf('CardType');
              const categoryIndex = headers.indexOf('Category');
              const textIndex = headers.indexOf('Text');
-
-             if (cardTypeIndex === -1 || categoryIndex === -1 || textIndex === -1) {
-                console.error('CSVヘッダーに "CardType", "Category", "Text" のいずれかがありません。');
-                return [];
-             }
-
+             if (cardTypeIndex === -1 || categoryIndex === -1 || textIndex === -1) { return []; }
              return lines.slice(1).map(line => {
-                const parts = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
-                if (parts.length < headers.length) return null;
-
-                const CardType = (parts[cardTypeIndex] || '').replace(/"/g, '').trim();
-                const Category = (parts[categoryIndex] || '').replace(/"/g, '').trim();
-                const Text = (parts[textIndex] || '').replace(/"/g, '').trim();
-                
+                const parts = line.split(',');
+                const CardType = (parts[cardTypeIndex] || '').trim().replace(/"/g, '');
+                const Category = (parts[categoryIndex] || '').trim().replace(/"/g, '');
+                const Text = (parts[textIndex] || '').trim().replace(/"/g, '');
                 return { CardType, Category, Text };
-             }).filter(card => card && card.Text);
+             }).filter(card => card && card.Text && card.CardType);
         }
         
         function renderCards(data) {
-            const cardsByType = data.reduce((acc, card) => {
+            const customCards = loadCustomCards();
+            const allData = [...data, ...customCards.map(c => ({...c, isCustom: true}))];
+
+            const cardsByType = allData.reduce((acc, card) => {
                 const type = card.CardType || 'その他';
                 if (!acc[type]) acc[type] = [];
                 acc[type].push(card);
@@ -247,19 +231,22 @@
             }, {});
             cardBanks.innerHTML = '';
             
-            // 「感じカード」セクションの描画
-            if (cardsByType['感じ']) {
-                const kanjiSection = document.createElement('section');
-                kanjiSection.className = 'bg-white p-4 md:p-6 rounded-xl shadow-md';
-                kanjiSection.innerHTML = `<h3 class="text-xl font-bold mb-2">感じカード</h3>`;
-                const container = document.createElement('div');
-                container.className = 'flex flex-wrap gap-2';
-                cardsByType['感じ'].forEach(card => container.appendChild(createCard(card)));
-                kanjiSection.appendChild(container);
-                cardBanks.appendChild(kanjiSection);
-            }
+            const kanjiSection = document.createElement('section');
+            kanjiSection.className = 'bg-white p-4 md:p-6 rounded-xl shadow-md';
+            kanjiSection.innerHTML = `
+                <h3 class="text-xl font-bold mb-2">感じカード</h3>
+                <div class="flex gap-2 items-center my-3">
+                    <input type="text" placeholder="自由な言葉を追加..." class="custom-card-input flex-grow border-gray-300 rounded-md shadow-sm text-sm p-1.5" data-category="" data-type="感じ">
+                    <button class="add-custom-card-button bg-gray-600 hover:bg-gray-700 text-white font-bold py-1.5 px-3 rounded-md text-sm" data-category="" data-type="感じ">追加</button>
+                </div>
+            `;
+            const kanjiContainer = document.createElement('div');
+            kanjiContainer.className = 'flex flex-wrap gap-2';
+            kanjiContainer.id = 'container-感じ';
+            (cardsByType['感じ'] || []).forEach(card => kanjiContainer.appendChild(createCard(card, card.isCustom)));
+            kanjiSection.appendChild(kanjiContainer);
+            cardBanks.appendChild(kanjiSection);
 
-            // 「特徴カード」セクションの描画
             if (cardsByType['特徴']) {
                 const tokuchoSection = document.createElement('section');
                 tokuchoSection.className = 'bg-white p-4 md:p-6 rounded-xl shadow-md';
@@ -275,28 +262,35 @@
                 }, {});
 
                 Object.keys(categoryColors).forEach(category => {
-                    if (cardsByCategory[category]) {
-                        const categorySubSection = document.createElement('div');
-                        const color = categoryColors[category] || defaultColor;
-                        categorySubSection.innerHTML = `<h4 class="text-md font-bold pb-1" style="border-bottom: 3px solid ${color};">${category}</h4>`;
-                        const container = document.createElement('div');
-                        container.className = 'flex flex-wrap gap-2 mt-2';
-                        cardsByCategory[category].forEach(card => container.appendChild(createCard(card)));
-                        categorySubSection.appendChild(container);
-                        categoryGrid.appendChild(categorySubSection);
-                    }
+                    const categorySubSection = document.createElement('div');
+                    const color = categoryColors[category] || defaultColor;
+                    categorySubSection.innerHTML = `
+                        <h4 class="text-md font-bold pb-1" style="border-bottom: 3px solid ${color};">${category}</h4>
+                        <div class="flex gap-2 items-center my-3">
+                            <input type="text" placeholder="自由な言葉を追加..." class="custom-card-input flex-grow border-gray-300 rounded-md shadow-sm text-sm p-1.5" data-category="${category}" data-type="特徴">
+                            <button class="add-custom-card-button bg-gray-600 hover:bg-gray-700 text-white font-bold py-1.5 px-3 rounded-md text-sm" data-category="${category}" data-type="特徴">追加</button>
+                        </div>`;
+                    const container = document.createElement('div');
+                    container.className = 'flex flex-wrap gap-2 mt-2';
+                    container.id = `container-${category}`;
+                    (cardsByCategory[category] || []).forEach(card => container.appendChild(createCard(card, card.isCustom)));
+                    categorySubSection.appendChild(container);
+                    categoryGrid.appendChild(categorySubSection);
                 });
                 tokuchoSection.appendChild(categoryGrid);
                 cardBanks.appendChild(tokuchoSection);
             }
         }
         
-        function createCard(cardData) {
+        function createCard(cardData, isCustom = false) {
             const card = document.createElement('div');
-            card.className = 'card flex-shrink-0 w-16 h-20 bg-white rounded-md shadow-md flex flex-col justify-between text-center font-semibold text-gray-700 select-none overflow-hidden text-xs';
-            card.innerHTML = `<div class="p-1 flex-grow flex items-center justify-center">${cardData.Text}</div>`;
+            const bgColor = isCustom ? 'bg-gray-100' : 'bg-white';
+            card.className = `card relative flex-shrink-0 w-16 h-20 ${bgColor} rounded-md shadow-md flex flex-col justify-between text-center font-semibold text-gray-700 select-none overflow-hidden text-xs`;
+            
+            const deleteButton = isCustom ? `<button class="delete-custom-card absolute top-0 right-0.5 text-lg leading-none text-red-400 hover:text-red-600 font-bold">&times;</button>` : '';
+            card.innerHTML = `${deleteButton}<div class="p-1 flex-grow flex items-center justify-center">${cardData.Text}</div>`;
 
-            if (cardData.Category) { // 特徴カードの場合のみカテゴリフッターを追加
+            if (cardData.Category) {
                 const color = categoryColors[cardData.Category] || defaultColor;
                 const footer = document.createElement('div');
                 footer.className = 'px-1 py-0.5 text-[9px] text-white font-bold';
@@ -306,19 +300,80 @@
             }
             card.draggable = true;
             Object.assign(card.dataset, cardData);
+            if(isCustom) card.dataset.isCustom = 'true';
             return card;
         }
 
-        clearButton.addEventListener('click', () => { selectionArea.innerHTML = ''; updatePlaceholder(); });
-        
+        function addCardToSelection(originalCard, dropEvent) {
+            const newCard = originalCard.cloneNode(true);
+            newCard.style.position = 'absolute';
+            const customDeleteBtn = newCard.querySelector('.delete-custom-card');
+            if(customDeleteBtn) customDeleteBtn.remove();
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.className = 'absolute top-0 right-0.5 text-lg leading-none text-red-400 hover:text-red-600 font-bold bg-white bg-opacity-50 rounded-full w-4 h-4 flex items-center justify-center';
+            deleteBtn.onclick = (e) => { e.stopPropagation(); newCard.remove(); updatePlaceholder(); };
+            newCard.appendChild(deleteBtn);
+
+            selectionArea.appendChild(newCard);
+            updatePlaceholder();
+
+            if (dropEvent) {
+                const rect = selectionArea.getBoundingClientRect();
+                newCard.style.left = `${dropEvent.clientX - rect.left - (newCard.offsetWidth / 2)}px`;
+                newCard.style.top = `${dropEvent.clientY - rect.top - (newCard.offsetHeight / 2)}px`;
+            } else {
+                const gap = 10;
+                const existingCards = selectionArea.querySelectorAll('.card').length - 1;
+                const containerWidth = selectionArea.clientWidth;
+                const cardWidthWithGap = (newCard.offsetWidth || 64) + gap;
+                const cardsPerRow = Math.max(1, Math.floor((containerWidth - gap) / cardWidthWithGap));
+                const col = existingCards % cardsPerRow;
+                const row = Math.floor(existingCards / cardsPerRow);
+                newCard.style.left = `${gap + col * cardWidthWithGap}px`;
+                newCard.style.top = `${gap + row * ( (newCard.offsetHeight || 80) + gap)}px`;
+            }
+        }
+
+        function updatePlaceholder() { 
+            selectionPlaceholder.classList.toggle('hidden', !!selectionArea.querySelector('.card'));
+        }
+
+        function onMouseMove(e) {
+            if (!activeCard) return;
+            const rect = selectionArea.getBoundingClientRect();
+            activeCard.style.left = `${e.clientX - rect.left - offsetX}px`;
+            activeCard.style.top = `${e.clientY - rect.top - offsetY}px`;
+        }
+
+        function onMouseUp() { 
+            document.removeEventListener('mousemove', onMouseMove); 
+            document.removeEventListener('mouseup', onMouseUp); 
+            activeCard = null; 
+        }
+
+        // --- イベントリスナー ---
+        document.addEventListener('DOMContentLoaded', handleLogin);
+        loginButton.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            if (username) {
+                currentUser = username;
+                localStorage.setItem('musicCardToolUser', currentUser);
+                startStudentApp();
+            } else {
+                alert('名前を入力してください。');
+            }
+        });
+        clearButton.addEventListener('click', () => { 
+            selectionArea.innerHTML = ''; 
+            updatePlaceholder(); 
+        });
+
         submitLayoutButton.addEventListener('click', async () => {
-            if (!window.firebaseDB) {
-                alert("データベースに接続できません。設定を確認してください。"); return;
-            }
+            if (!window.firebaseDB) { alert("データベースに接続できません。設定を確認してください。"); return; }
             const cards = selectionArea.querySelectorAll('.card');
-            if (cards.length === 0) {
-                alert('提出するカードがありません。'); return;
-            }
+            if (cards.length === 0) { alert('提出するカードがありません。'); return; }
             if (!confirm('この配置を提出しますか？')) return;
             const layoutData = Array.from(cards).map(card => ({
                 Text: card.dataset.text, CardType: card.dataset.type, Category: card.dataset.category,
@@ -337,73 +392,46 @@
                 alert("提出に失敗しました。");
             }
         });
+        
+        cardBanks.addEventListener('click', e => {
+            const target = e.target;
+            if (target.classList.contains('add-custom-card-button')) {
+                const type = target.dataset.type;
+                const category = target.dataset.category;
+                const input = target.previousElementSibling;
+                const inputValue = input.value.trim();
+                if (inputValue) {
+                    const cardData = { Text: inputValue, CardType: type, Category: category };
+                    const newCard = createCard(cardData, true);
+                    const containerId = type === '感じ' ? 'container-感じ' : `container-${category}`;
+                    document.getElementById(containerId).appendChild(newCard);
+                    addCustomCard(cardData);
+                    input.value = '';
+                }
+            } else if (target.classList.contains('delete-custom-card')) {
+                const cardElement = target.closest('.card');
+                const cardData = { Text: cardElement.dataset.text, CardType: cardElement.dataset.type, Category: cardElement.dataset.category };
+                deleteCustomCard(cardData);
+                cardElement.remove();
+            } else if (e.target.closest('.card:not(.delete-custom-card)')) {
+                 addCardToSelection(e.target.closest('.card'));
+            }
+        });
+        cardBanks.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('custom-card-input')) { e.target.nextElementSibling.click(); } });
 
-        // --- ドラッグ＆ドロップ、カード移動 ---
-        let draggedCard = null;
         document.addEventListener('dragstart', e => { if (e.target.closest('.card')) { draggedCard = e.target.closest('.card'); } });
         selectionArea.addEventListener('dragover', e => e.preventDefault());
         selectionArea.addEventListener('drop', e => { e.preventDefault(); if (draggedCard) addCardToSelection(draggedCard, e); });
-        cardBanks.addEventListener('click', e => { if (e.target.closest('.card')) addCardToSelection(e.target.closest('.card')); });
         
-        function addCardToSelection(originalCard, dropEvent) {
-            const newCard = originalCard.cloneNode(true);
-            newCard.style.position = 'absolute'; // Ensure it can be moved freely
-
-            // ×ボタンを追加
-            const deleteBtn = document.createElement('button');
-            deleteBtn.innerHTML = '&times;';
-            deleteBtn.className = 'absolute top-0 right-0.5 text-lg leading-none text-red-400 hover:text-red-600 font-bold bg-white bg-opacity-50 rounded-full w-4 h-4 flex items-center justify-center';
-            deleteBtn.onclick = (e) => {
-                e.stopPropagation(); // mousedownイベントが発火するのを防ぐ
-                newCard.remove();
-                updatePlaceholder();
-            };
-            newCard.appendChild(deleteBtn);
-
-            selectionArea.appendChild(newCard);
-            updatePlaceholder();
-
-            // 配置ロジック
-            if (dropEvent) {
-                const rect = selectionArea.getBoundingClientRect();
-                newCard.style.left = `${dropEvent.clientX - rect.left - (newCard.offsetWidth / 2)}px`;
-                newCard.style.top = `${dropEvent.clientY - rect.top - (newCard.offsetHeight / 2)}px`;
-            } else {
-                const gap = 10;
-                const existingCards = selectionArea.querySelectorAll('.card').length - 1;
-                const containerWidth = selectionArea.clientWidth;
-                const cardsPerRow = Math.floor((containerWidth - gap) / (newCard.offsetWidth + gap));
-                const col = existingCards % cardsPerRow;
-                const row = Math.floor(existingCards / cardsPerRow);
-                newCard.style.left = `${gap + col * (newCard.offsetWidth + gap)}px`;
-                newCard.style.top = `${gap + row * (newCard.offsetHeight + gap)}px`;
-            }
-        }
-        function updatePlaceholder() { selectionPlaceholder.classList.toggle('hidden', !!selectionArea.querySelector('.card'));}
-        let activeCard = null, offsetX, offsetY;
         selectionArea.addEventListener('mousedown', e => {
-            // ×ボタンのクリックはドラッグとみなさない
             if (e.target.tagName === 'BUTTON') return;
-
             activeCard = e.target.closest('.card'); 
             if (!activeCard) return;
-            
             offsetX = e.clientX - activeCard.getBoundingClientRect().left; 
             offsetY = e.clientY - activeCard.getBoundingClientRect().top;
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
-        function onMouseMove(e) {
-            if (!activeCard) return;
-            const rect = selectionArea.getBoundingClientRect();
-            activeCard.style.left = `${e.clientX - rect.left - offsetX}px`;
-            activeCard.style.top = `${e.clientY - rect.top - offsetY}px`;
-        }
-        function onMouseUp() { 
-            document.removeEventListener('mousemove', onMouseMove); 
-            document.removeEventListener('mouseup', onMouseUp); 
-            activeCard = null; 
-        }
     </script>
 </body>
 </html>
