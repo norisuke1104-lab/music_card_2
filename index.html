@@ -143,7 +143,6 @@
                 <span>こんにちは、<strong class="font-bold">${currentUser}</strong> さん</span>
                 <button id="logout-button" class="ml-2 text-blue-500 hover:underline text-xs">[ユーザー変更]</button>
             `;
-            // Add event listener for the new logout button
             document.getElementById('logout-button').addEventListener('click', () => {
                 if (confirm('ユーザーを変更しますか？保存したカスタムカードは残りますが、現在の「選んだカード」はリセットされます。')) {
                     localStorage.removeItem('musicCardToolUser');
@@ -187,16 +186,15 @@
                 querySnapshot.forEach((doc) => {
                     const submission = doc.data();
                     const cardEl = document.createElement('div');
-                    cardEl.className = 'teacher-submission-card bg-white p-4 rounded-lg shadow-md'; // Removed cursor-pointer as it's not interactive yet
+                    cardEl.className = 'teacher-submission-card bg-white p-2 rounded-lg shadow-md';
                     
-                    // layoutが配列でない場合を考慮
                     const cardLayoutHtml = Array.isArray(submission.layout) ? submission.layout.map(card => {
                         const color = categoryColors[card.Category] || defaultColor;
                         const text = card.Text || 'テキストなし';
-                        return `<div class="text-xs font-semibold p-1 rounded whitespace-nowrap overflow-hidden text-ellipsis" style="background-color: ${color}20; border-left: 3px solid ${color};" title="${text}">${text}</div>`;
+                        return `<div class="text-[10px] font-semibold py-0.5 px-1 rounded whitespace-nowrap overflow-hidden text-ellipsis" style="background-color: ${color}20; border-left: 2px solid ${color};" title="${text}">${text}</div>`;
                     }).join('') : '<p class="text-xs text-red-500">レイアウトデータが不整合です。</p>';
 
-                    cardEl.innerHTML = `<h3 class="font-bold text-lg">${submission.user} さん</h3><p class="text-xs text-gray-500 mb-2">${submission.timestamp ? new Date(submission.timestamp.toDate()).toLocaleString() : '日付不明'}</p><div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>`;
+                    cardEl.innerHTML = `<h3 class="font-bold text-sm">${submission.user} さん</h3><p class="text-xs text-gray-500 mb-2">${submission.timestamp ? new Date(submission.timestamp.toDate()).toLocaleString() : '日付不明'}</p><div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>`;
                     submissionsGrid.appendChild(cardEl);
                 });
             });
