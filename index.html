@@ -60,7 +60,7 @@
     </div>
     
     <!-- ===== 生徒用メイン画面 ===== -->
-    <div id="student-container" class="max-w-7xl mx-auto">
+    <div id="student-container" class="max-w-7xl mx-auto hidden">
         <header class="text-center mb-4">
             <div id="user-info" class="text-left text-sm mb-4"></div>
             <h1 class="text-3xl md:text-4xl font-bold text-gray-700">音楽鑑賞カード選択ツール</h1>
@@ -131,12 +131,14 @@
                 startStudentApp();
             } else {
                 loginModal.classList.remove('hidden');
+                studentContainer.classList.add('hidden'); // Ensure student container is hidden
             }
         }
 
         function startStudentApp() {
             loginModal.classList.add('hidden');
             studentContainer.classList.remove('hidden');
+            teacherContainer.classList.add('hidden');
             userInfo.innerHTML = `<span>こんにちは、<strong class="font-bold">${currentUser}</strong> さん</span>`;
             fetchCardData();
         }
@@ -180,7 +182,7 @@
                         const color = categoryColors[card.Category] || defaultColor;
                         return `<div class="text-xs font-semibold p-1 rounded" style="background-color: ${color}20; border-left: 3px solid ${color};">${card.Text}</div>`;
                     }).join('');
-                    cardEl.innerHTML = `<h3 class="font-bold text-lg">${submission.user} さん</h3><p class="text-xs text-gray-500 mb-2">${new Date(submission.timestamp?.toDate()).toLocaleString()}</p><div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>`;
+                    cardEl.innerHTML = `<h3 class="font-bold text-lg">${submission.user} さん</h3><p class="text-xs text-gray-500 mb-2">${submission.timestamp ? new Date(submission.timestamp.toDate()).toLocaleString() : '日付不明'}</p><div class="space-y-1">${cardLayoutHtml || 'カードがありません'}</div>`;
                     submissionsGrid.appendChild(cardEl);
                 });
             });
@@ -354,7 +356,14 @@
         }
 
         // --- イベントリスナー ---
-        document.addEventListener('DOMContentLoaded', handleLogin);
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('mode') === 'teacher') {
+                showTeacherView();
+            } else {
+                handleLogin();
+            }
+        });
         
         loginButton.addEventListener('click', () => {
             const username = usernameInput.value.trim();
@@ -431,7 +440,6 @@
             } 
         });
 
-        // 修正: ドラッグ開始のイベントリスナーをcardBanksに限定
         cardBanks.addEventListener('dragstart', e => { 
             if (e.target.closest('.card')) { 
                 draggedCard = e.target.closest('.card'); 
@@ -447,14 +455,11 @@
             if (e.target.tagName === 'BUTTON') return;
             activeCard = e.target.closest('.card'); 
             if (!activeCard) return;
-
-            // 修正: ブラウザのデフォルトのドラッグ動作を抑制
             e.preventDefault();
-
             offsetX = e.clientX - activeCard.getBoundingClientRect().left; 
             offsetY = e.clientY - activeCard.getBoundingClientRect().top;
             document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp, { once: true }); // 修正: mouseupイベントが一度だけ実行されるように
+            document.addEventListener('mouseup', onMouseUp, { once: true });
         });
     </script>
 </body>
