@@ -115,9 +115,9 @@
         const submissionsPlaceholder = document.getElementById('submissions-placeholder');
         
         // --- 定数 ---
-        const SPREADSHEET_URL_ORIGINAL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRyg4pnXnznW3zuxlmaDTE-BIjpk-JL8KsgvFwcLY2-en7dfyJHh1ybSJ0-Ze34J-V-Lme_oO08E2o0/pub?output=csv';
-        // ローカルファイルでテストする際のCORSエラーを回避するため、さらに別のプロキシを経由します。
-        const GOOGLE_SHEET_URL = `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(SPREADSHEET_URL_ORIGINAL)}`;
+        // Google Apps ScriptのウェブアプリURLを反映
+        const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzbpGuYyEgO4v3DGtF5vfw9lFqAnqT1k35r3REw8GT_CqS3eZ5tsjETwe8cilEN3LHB/exec';
+
         const categoryColors = { '音色': '#3b82f6', 'リズム': '#22c55e', '速度': '#eab308', '旋律': '#ef4444', 'テクスチュア': '#a855f7', '強弱': '#f97316', '形式': '#ec4899', '構成': '#14b8a6' };
         const defaultColor = '#6b7280';
         
@@ -209,7 +209,7 @@
                 loadingState.classList.add('hidden');
             } catch (error) { 
                 console.error('Error fetching card data:', error);
-                loadingState.innerHTML = `<p class="text-red-500">カードデータの読み込みに失敗しました。時間をおいて再度お試しください。</p>`;
+                loadingState.innerHTML = `<p class="text-red-500">カードデータの読み込みに失敗しました。URLが正しいか確認してください。</p>`;
             }
         }
 
@@ -221,7 +221,7 @@
                 const Category = parts[1] || '';
                 const Text = parts.slice(2).join(',').replace(/"/g, '');
                 return { CardType, Category, Text };
-             }).filter(card => card.Text); // Textが空の行は除外
+             }).filter(card => card.Text);
         }
         
         function renderCards(data) {
@@ -231,9 +231,7 @@
                 acc[type].push(card);
                 return acc;
             }, {});
-
-            cardBanks.innerHTML = ''; // Reset before rendering
-
+            cardBanks.innerHTML = '';
             Object.entries(cardsByType).forEach(([type, cards]) => {
                 const section = document.createElement('section');
                 section.className = 'bg-white p-4 md:p-6 rounded-xl shadow-md';
@@ -276,7 +274,6 @@
                 return;
             }
             if (!confirm('この配置を提出しますか？')) return;
-
             const layoutData = Array.from(cards).map(card => ({
                 Text: card.dataset.text,
                 CardType: card.dataset.type,
@@ -284,7 +281,6 @@
                 left: card.style.left,
                 top: card.style.top
             }));
-            
             try {
                 const { collection, addDoc } = window.firebaseTools;
                 await addDoc(collection(window.firebaseDB, "submissions"), {
