@@ -115,9 +115,7 @@
         const submissionsPlaceholder = document.getElementById('submissions-placeholder');
         
         // --- 定数 ---
-        // Google Apps ScriptのウェブアプリURLを反映
         const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzbpGuYyEgO4v3DGtF5vfw9lFqAnqT1k35r3REw8GT_CqS3eZ5tsjETwe8cilEN3LHB/exec';
-
         const categoryColors = { '音色': '#3b82f6', 'リズム': '#22c55e', '速度': '#eab308', '旋律': '#ef4444', 'テクスチュア': '#a855f7', '強弱': '#f97316', '形式': '#ec4899', '構成': '#14b8a6' };
         const defaultColor = '#6b7280';
         
@@ -218,8 +216,7 @@
 
         function parseCSV(text) {
              const lines = text.trim().split(/\r\n|\n/);
-             // ヘッダー行を取得
-             const headers = lines[0].split(',').map(h => h.trim());
+             const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
              const cardTypeIndex = headers.indexOf('CardType');
              const categoryIndex = headers.indexOf('Category');
              const textIndex = headers.indexOf('Text');
@@ -230,7 +227,6 @@
              }
 
              return lines.slice(1).map(line => {
-                // 正規表現でカンマ区切りを正しく扱う (引用符内のカンマを無視)
                 const parts = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
                 if (parts.length < headers.length) return null;
 
@@ -250,23 +246,57 @@
                 return acc;
             }, {});
             cardBanks.innerHTML = '';
-            Object.entries(cardsByType).forEach(([type, cards]) => {
-                const section = document.createElement('section');
-                section.className = 'bg-white p-4 md:p-6 rounded-xl shadow-md';
-                section.innerHTML = `<h3 class="text-xl font-bold mb-2">${type}カード</h3>`;
+            
+            // 「感じカード」セクションの描画
+            if (cardsByType['感じ']) {
+                const kanjiSection = document.createElement('section');
+                kanjiSection.className = 'bg-white p-4 md:p-6 rounded-xl shadow-md';
+                kanjiSection.innerHTML = `<h3 class="text-xl font-bold mb-2">感じカード</h3>`;
                 const container = document.createElement('div');
                 container.className = 'flex flex-wrap gap-2';
-                cards.forEach(card => container.appendChild(createCard(card)));
-                section.appendChild(container);
-                cardBanks.appendChild(section);
-            });
+                cardsByType['感じ'].forEach(card => container.appendChild(createCard(card)));
+                kanjiSection.appendChild(container);
+                cardBanks.appendChild(kanjiSection);
+            }
+
+            // 「特徴カード」セクションの描画
+            if (cardsByType['特徴']) {
+                const tokuchoSection = document.createElement('section');
+                tokuchoSection.className = 'bg-white p-4 md:p-6 rounded-xl shadow-md';
+                tokuchoSection.innerHTML = `<h3 class="text-xl font-bold mb-2">特徴カード</h3>`;
+                const categoryGrid = document.createElement('div');
+                categoryGrid.className = 'space-y-4 mt-4';
+
+                const cardsByCategory = cardsByType['特徴'].reduce((acc, card) => {
+                    const category = card.Category || 'その他';
+                    if (!acc[category]) acc[category] = [];
+                    acc[category].push(card);
+                    return acc;
+                }, {});
+
+                Object.keys(categoryColors).forEach(category => {
+                    if (cardsByCategory[category]) {
+                        const categorySubSection = document.createElement('div');
+                        const color = categoryColors[category] || defaultColor;
+                        categorySubSection.innerHTML = `<h4 class="text-md font-bold pb-1" style="border-bottom: 3px solid ${color};">${category}</h4>`;
+                        const container = document.createElement('div');
+                        container.className = 'flex flex-wrap gap-2 mt-2';
+                        cardsByCategory[category].forEach(card => container.appendChild(createCard(card)));
+                        categorySubSection.appendChild(container);
+                        categoryGrid.appendChild(categorySubSection);
+                    }
+                });
+                tokuchoSection.appendChild(categoryGrid);
+                cardBanks.appendChild(tokuchoSection);
+            }
         }
         
         function createCard(cardData) {
             const card = document.createElement('div');
             card.className = 'card flex-shrink-0 w-16 h-20 bg-white rounded-md shadow-md flex flex-col justify-between text-center font-semibold text-gray-700 select-none overflow-hidden text-xs';
             card.innerHTML = `<div class="p-1 flex-grow flex items-center justify-center">${cardData.Text}</div>`;
-            if (cardData.Category) {
+
+            if (cardData.Category) { // 特徴カードの場合のみカテゴリフッターを追加
                 const color = categoryColors[cardData.Category] || defaultColor;
                 const footer = document.createElement('div');
                 footer.className = 'px-1 py-0.5 text-[9px] text-white font-bold';
@@ -283,28 +313,21 @@
         
         submitLayoutButton.addEventListener('click', async () => {
             if (!window.firebaseDB) {
-                alert("データベースに接続できません。設定を確認してください。");
-                return;
+                alert("データベースに接続できません。設定を確認してください。"); return;
             }
             const cards = selectionArea.querySelectorAll('.card');
             if (cards.length === 0) {
-                alert('提出するカードがありません。');
-                return;
+                alert('提出するカードがありません。'); return;
             }
             if (!confirm('この配置を提出しますか？')) return;
             const layoutData = Array.from(cards).map(card => ({
-                Text: card.dataset.text,
-                CardType: card.dataset.type,
-                Category: card.dataset.category,
-                left: card.style.left,
-                top: card.style.top
+                Text: card.dataset.text, CardType: card.dataset.type, Category: card.dataset.category,
+                left: card.style.left, top: card.style.top
             }));
             try {
                 const { collection, addDoc } = window.firebaseTools;
                 await addDoc(collection(window.firebaseDB, "submissions"), {
-                    user: currentUser,
-                    layout: layoutData,
-                    timestamp: new Date()
+                    user: currentUser, layout: layoutData, timestamp: new Date()
                 });
                 alert('提出しました！');
                 selectionArea.innerHTML = '';
@@ -324,8 +347,23 @@
         
         function addCardToSelection(originalCard, dropEvent) {
             const newCard = originalCard.cloneNode(true);
+            newCard.style.position = 'absolute'; // Ensure it can be moved freely
+
+            // ×ボタンを追加
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.className = 'absolute top-0 right-0.5 text-lg leading-none text-red-400 hover:text-red-600 font-bold bg-white bg-opacity-50 rounded-full w-4 h-4 flex items-center justify-center';
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation(); // mousedownイベントが発火するのを防ぐ
+                newCard.remove();
+                updatePlaceholder();
+            };
+            newCard.appendChild(deleteBtn);
+
             selectionArea.appendChild(newCard);
             updatePlaceholder();
+
+            // 配置ロジック
             if (dropEvent) {
                 const rect = selectionArea.getBoundingClientRect();
                 newCard.style.left = `${dropEvent.clientX - rect.left - (newCard.offsetWidth / 2)}px`;
@@ -333,16 +371,25 @@
             } else {
                 const gap = 10;
                 const existingCards = selectionArea.querySelectorAll('.card').length - 1;
-                newCard.style.left = `${(existingCards * (newCard.offsetWidth + gap)) + gap}px`;
-                newCard.style.top = `${gap}px`;
+                const containerWidth = selectionArea.clientWidth;
+                const cardsPerRow = Math.floor((containerWidth - gap) / (newCard.offsetWidth + gap));
+                const col = existingCards % cardsPerRow;
+                const row = Math.floor(existingCards / cardsPerRow);
+                newCard.style.left = `${gap + col * (newCard.offsetWidth + gap)}px`;
+                newCard.style.top = `${gap + row * (newCard.offsetHeight + gap)}px`;
             }
         }
         function updatePlaceholder() { selectionPlaceholder.classList.toggle('hidden', !!selectionArea.querySelector('.card'));}
         let activeCard = null, offsetX, offsetY;
         selectionArea.addEventListener('mousedown', e => {
-            activeCard = e.target.closest('.card'); if (!activeCard) return;
-            if (e.detail === 2) { activeCard.remove(); updatePlaceholder(); return; }
-            offsetX = e.clientX - activeCard.getBoundingClientRect().left; offsetY = e.clientY - activeCard.getBoundingClientRect().top;
+            // ×ボタンのクリックはドラッグとみなさない
+            if (e.target.tagName === 'BUTTON') return;
+
+            activeCard = e.target.closest('.card'); 
+            if (!activeCard) return;
+            
+            offsetX = e.clientX - activeCard.getBoundingClientRect().left; 
+            offsetY = e.clientY - activeCard.getBoundingClientRect().top;
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
@@ -352,7 +399,11 @@
             activeCard.style.left = `${e.clientX - rect.left - offsetX}px`;
             activeCard.style.top = `${e.clientY - rect.top - offsetY}px`;
         }
-        function onMouseUp() { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); activeCard = null; }
+        function onMouseUp() { 
+            document.removeEventListener('mousemove', onMouseMove); 
+            document.removeEventListener('mouseup', onMouseUp); 
+            activeCard = null; 
+        }
     </script>
 </body>
 </html>
